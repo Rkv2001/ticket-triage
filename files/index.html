@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Ticket Triage</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #222535;
+      --border: #2e3147;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --text: #e2e8f0;
+      --text-muted: #8892a4;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --info: #3b82f6;
+
+      --p0: #ef4444;
+      --p0-bg: #3b0b0b;
+      --p1: #f97316;
+      --p1-bg: #3b1a07;
+      --p2: #f59e0b;
+      --p2-bg: #3b2a07;
+      --p3: #22c55e;
+      --p3-bg: #073b18;
+
+      --cat-billing: #a78bfa;
+      --cat-technical: #60a5fa;
+      --cat-account: #34d399;
+      --cat-feature: #fb923c;
+      --cat-security: #f87171;
+      --cat-other: #94a3b8;
+
+      --radius: 10px;
+      --radius-sm: 6px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Layout ──────────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+    }
+
+    header .logo {
+      width: 36px; height: 36px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: grid; place-items: center;
+      font-size: 18px;
+    }
+
+    header h1 { font-size: 1.15rem; font-weight: 600; }
+    header p { font-size: 0.8rem; color: var(--text-muted); margin-top: 1px; }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    @media (max-width: 768px) {
+      .container { grid-template-columns: 1fr; padding: 16px; }
+    }
+
+    /* ── Cards ───────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .card-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Form ────────────────────────────────────────────────────── */
+    .form-group { margin-bottom: 16px; }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--text-muted);
+    }
+
+    textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.9rem;
+      padding: 12px 14px;
+      resize: vertical;
+      min-height: 140px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+    }
+
+    textarea.error { border-color: var(--danger); }
+
+    .char-count {
+      text-align: right;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .char-count.warn { color: var(--warning); }
+
+    .error-msg {
+      color: var(--danger);
+      font-size: 0.8rem;
+      margin-top: 6px;
+      display: none;
+    }
+
+    .error-msg.visible { display: block; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 24px;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s, transform 0.1s;
+      width: 100%;
+    }
+
+    .btn:active { transform: scale(0.98); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Result Panel ────────────────────────────────────────────── */
+    .result-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .result-placeholder {
+      text-align: center;
+      padding: 32px 0;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .result-placeholder .icon { font-size: 2.5rem; margin-bottom: 10px; }
+
+    .result-content { display: none; }
+    .result-content.visible { display: block; }
+
+    .result-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .result-message {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-style: italic;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      flex: 1;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .badge-urgent { background: rgba(239,68,68,0.15); color: var(--danger); border: 1px solid var(--danger); }
+    .badge-normal { background: rgba(100,116,139,0.15); color: var(--text-muted); border: 1px solid var(--border); }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .result-item {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+    }
+
+    .result-item-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .result-item-value {
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    /* Priority colors */
+    .prio-p0 { color: var(--p0); }
+    .prio-p1 { color: var(--p1); }
+    .prio-p2 { color: var(--p2); }
+    .prio-p3 { color: var(--p3); }
+
+    /* Category colors */
+    .cat-billing    { color: var(--cat-billing); }
+    .cat-technical  { color: var(--cat-technical); }
+    .cat-account    { color: var(--cat-account); }
+    .cat-feature-request { color: var(--cat-feature); }
+    .cat-security   { color: var(--cat-security); }
+    .cat-other      { color: var(--cat-other); }
+
+    .confidence-bar {
+      margin-bottom: 16px;
+    }
+
+    .confidence-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .confidence-track {
+      height: 6px;
+      background: var(--surface2);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .confidence-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    .keywords-section { margin-bottom: 0; }
+
+    .keywords-section-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .keyword-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .chip.signal { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Error Toast ─────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--danger);
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 500;
+      box-shadow: var(--shadow);
+      z-index: 999;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: transform 0.3s, opacity 0.3s;
+      max-width: 320px;
+    }
+
+    .toast.visible { transform: translateY(0); opacity: 1; }
+
+    /* ── Ticket Table ─────────────────────────────────────────────── */
+    .full-width {
+      grid-column: 1 / -1;
+    }
+
+    .table-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .total-badge {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 12px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    thead tr { background: var(--surface2); }
+
+    th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tbody tr:hover { background: var(--surface2); }
+
+    .td-message {
+      max-width: 220px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-muted);
+    }
+
+    .prio-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .prio-pill.p0 { background: var(--p0-bg); color: var(--p0); }
+    .prio-pill.p1 { background: var(--p1-bg); color: var(--p1); }
+    .prio-pill.p2 { background: var(--p2-bg); color: var(--p2); }
+    .prio-pill.p3 { background: var(--p3-bg); color: var(--p3); }
+
+    .table-empty {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .table-loading {
+      text-align: center;
+      padding: 32px;
+      color: var(--text-muted);
+    }
+
+    .table-loading .spinner {
+      margin: 0 auto 10px;
+      border-color: rgba(255,255,255,0.15);
+      border-top-color: var(--accent);
+    }
+
+    .refresh-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 5px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    .refresh-btn:hover { color: var(--text); border-color: var(--accent); }
+
+    .urgent-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      background: var(--danger);
+      border-radius: 50%;
+      margin-right: 5px;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .time-cell { color: var(--text-muted); white-space: nowrap; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🎫</div>
+  <div>
+    <h1>AI Ticket Triage</h1>
+    <p>Automated support ticket classification & prioritization</p>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ── Submit Form ──────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">✍️ Submit Ticket</div>
+
+    <div class="form-group">
+      <label for="ticketMsg">Describe your issue</label>
+      <textarea
+        id="ticketMsg"
+        placeholder="e.g. I was charged twice on my last invoice and need an urgent refund…"
+        maxlength="5000"
+      ></textarea>
+      <div class="char-count"><span id="charCount">0</span> / 5000</div>
+      <div class="error-msg" id="msgError">Message must be at least 5 characters.</div>
+    </div>
+
+    <button class="btn btn-primary" id="submitBtn" onclick="submitTicket()">
+      <span id="btnText">Analyze Ticket</span>
+    </button>
+  </div>
+
+  <!-- ── Result Panel ─────────────────────────────────────────── -->
+  <div class="result-panel" id="resultPanel">
+    <div class="card-title">📊 Analysis Result</div>
+
+    <div class="result-placeholder" id="resultPlaceholder">
+      <div class="icon">🤖</div>
+      <div>Submit a ticket to see the AI analysis</div>
+    </div>
+
+    <div class="result-content" id="resultContent">
+      <!-- Filled dynamically -->
+    </div>
+  </div>
+
+  <!-- ── Ticket History Table ─────────────────────────────────── -->
+  <div class="card full-width">
+    <div class="table-header">
+      <div class="card-title" style="margin-bottom:0">📋 Recent Tickets</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="total-badge" id="totalBadge">0 tickets</span>
+        <button class="refresh-btn" onclick="loadTickets()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Message</th>
+            <th>Category</th>
+            <th>Priority</th>
+            <th>Urgent</th>
+            <th>Confidence</th>
+            <th>Keywords</th>
+            <th>Submitted</th>
+          </tr>
+        </thead>
+        <tbody id="ticketsBody">
+          <tr>
+            <td colspan="8" class="table-loading">
+              <div class="spinner"></div>
+              Loading tickets…
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  const API = (window.API_URL || 'http://localhost:3001');
+
+  /* ── Char counter ─────────────────────────────────────────── */
+  const textarea = document.getElementById('ticketMsg');
+  const charCount = document.getElementById('charCount');
+  textarea.addEventListener('input', () => {
+    const len = textarea.value.length;
+    charCount.textContent = len;
+    charCount.parentElement.classList.toggle('warn', len > 4500);
+  });
+
+  /* ── Toast ────────────────────────────────────────────────── */
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('visible');
+    setTimeout(() => t.classList.remove('visible'), 3500);
+  }
+
+  /* ── Submit Ticket ────────────────────────────────────────── */
+  async function submitTicket() {
+    const msg = textarea.value.trim();
+    const errEl = document.getElementById('msgError');
+    const btn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('btnText');
+
+    // Client-side validation
+    textarea.classList.remove('error');
+    errEl.classList.remove('visible');
+    if (msg.length < 5) {
+      textarea.classList.add('error');
+      errEl.classList.add('visible');
+      return;
+    }
+
+    // Loading state
+    btn.disabled = true;
+    btnText.textContent = 'Analyzing…';
+    btn.innerHTML = '<div class="spinner"></div><span>Analyzing…</span>';
+
+    try {
+      const res = await fetch(`${API}/tickets/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg })
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        const errMsg = json.errors ? json.errors.map(e => e.message).join(', ') : (json.error || 'Unknown error');
+        showToast('Error: ' + errMsg);
+        return;
+      }
+
+      renderResult(json.data);
+      loadTickets();
+      textarea.value = '';
+      charCount.textContent = '0';
+
+    } catch (e) {
+      showToast('Network error — is the backend running?');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<span id="btnText">Analyze Ticket</span>';
+    }
+  }
+
+  /* ── Render Result ────────────────────────────────────────── */
+  function renderResult(data) {
+    document.getElementById('resultPlaceholder').style.display = 'none';
+    const rc = document.getElementById('resultContent');
+    rc.classList.add('visible');
+
+    const pClass = data.priority.toLowerCase();
+    const catClass = 'cat-' + data.category.toLowerCase().replace(/\s+/g, '-');
+    const confidence = Math.round(data.confidence * 100);
+
+    const allKeywords = [...new Set([
+      ...(data.signals?.categorySignals || []),
+      ...(data.signals?.prioritySignals || []),
+      ...(data.signals?.urgencySignals || [])
+    ])];
+
+    rc.innerHTML = `
+      <div class="result-header">
+        <div class="result-message">"${escHtml(data.message)}"</div>
+        <div class="badge ${data.isUrgent ? 'badge-urgent' : 'badge-normal'}">
+          ${data.isUrgent ? '🔴 Urgent' : '⚪ Normal'}
+        </div>
+      </div>
+
+      <div class="result-grid">
+        <div class="result-item">
+          <div class="result-item-label">Category</div>
+          <div class="result-item-value ${catClass}">${data.category}</div>
+        </div>
+        <div class="result-item">
+          <div class="result-item-label">Priority</div>
+          <div class="result-item-value prio-${pClass}">${data.priority} — ${data.priorityLabel}</div>
+        </div>
+      </div>
+
+      <div class="confidence-bar">
+        <div class="confidence-bar-label">
+          <span>Confidence</span>
+          <span>${confidence}%</span>
+        </div>
+        <div class="confidence-track">
+          <div class="confidence-fill" style="width: ${confidence}%"></div>
+        </div>
+      </div>
+
+      <div class="keywords-section">
+        <div class="keywords-section-label">Detected Signals & Keywords</div>
+        <div class="keyword-chips">
+          ${allKeywords.length
+            ? allKeywords.map(k => `<span class="chip signal">${escHtml(k)}</span>`).join('')
+            : '<span class="chip">No strong signals detected</span>'}
+        </div>
+      </div>
+    `;
+  }
+
+  /* ── Load Tickets ─────────────────────────────────────────── */
+  async function loadTickets() {
+    const tbody = document.getElementById('ticketsBody');
+    tbody.innerHTML = `<tr><td colspan="8" class="table-loading"><div class="spinner"></div>Loading…</td></tr>`;
+
+    try {
+      const res = await fetch(`${API}/tickets?limit=50`);
+      const json = await res.json();
+
+      if (!json.success) throw new Error(json.error);
+
+      document.getElementById('totalBadge').textContent = `${json.data.total} ticket${json.data.total !== 1 ? 's' : ''}`;
+      renderTable(json.data.tickets);
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="8" class="table-empty">⚠️ Could not load tickets — is the backend running?</td></tr>`;
+    }
+  }
+
+  function renderTable(tickets) {
+    const tbody = document.getElementById('ticketsBody');
+
+    if (!tickets.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="table-empty">No tickets yet — submit one above!</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = tickets.map((t, i) => {
+      const pClass = t.priority.toLowerCase();
+      const catClass = 'cat-' + t.category.toLowerCase().replace(/\s+/g, '-');
+      const kws = (t.keywords || []).slice(0, 3).join(', ') || '—';
+      const time = formatTime(t.createdAt);
+
+      return `
+        <tr>
+          <td style="color:var(--text-muted)">${i + 1}</td>
+          <td class="td-message" title="${escHtml(t.message)}">${escHtml(t.message)}</td>
+          <td class="${catClass}" style="font-weight:600">${t.category}</td>
+          <td><span class="prio-pill ${pClass}">${t.priority}</span></td>
+          <td>${t.isUrgent ? '<span class="urgent-dot"></span>Yes' : '<span style="color:var(--text-muted)">No</span>'}</td>
+          <td>${Math.round(t.confidence * 100)}%</td>
+          <td style="color:var(--text-muted);font-size:0.78rem">${escHtml(kws)}</td>
+          <td class="time-cell">${time}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  /* ── Helpers ──────────────────────────────────────────────── */
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function formatTime(iso) {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
+    return d.toLocaleDateString();
+  }
+
+  // Enter key submits
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) submitTicket();
+  });
+
+  // Load on page open
+  loadTickets();
+</script>
+</body>
+</html>
